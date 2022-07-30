@@ -196,8 +196,6 @@ Explanation of additive non-uniform sampling
 
 Additive Random Sampling (ARS) as a sampling method provides alias-free processing of analogic signals. As its name indicates, the sampling instant in this mode is obtained by adding a random variable to the previous one in the sequence.  As the probability density function of the sum of two random variables is the convolution of their probability density function, the probability density function of the nth instant t_n is given by adding all the probabilities together. In Additive Random Sampling with a Gaussian distribution a signal can be easily separated from noise for a number of points greater than 100. Nonetheless, it can be seen that also in this mode the mean sampling frequency can be a way smaller than the Nyquist rate also, but with a limitation on the number of samples to be greater than 100. This could be applied for our specific use case as a potential solution.
 
-(Adam draft note: I'm thinking of cutting out the additive random non-uniform sampling section from this mcip as the stochastic jitting non-uniform sampling section seems to make a lot more sense to me, or maybe this just needs more work? Inutuitively I don't think additive random sampling will be what we go with but then again it might simply be that I don't understand it well enough yet.)
-
 
 #### Stochastic jitting Non-uniform sampling
 Explanation of stochastic non-uniform sampling:
@@ -216,11 +214,11 @@ Poisson Disc:
 This is a generalization of the Poisson sampling whereby each sample point satisfies a minimum distance constraint. This pattern is achieved by generating uniformly distributed points as in Poisson sampling and retaining those that satisfy the minimum distance constraint. This method is extremely expensive from a computational complexity perspective being incredibly inefficient to implement and so for our purposes should probably not be realistically considered but is worth mentioning especially in comparison with the other classes. 
 
 Jittered:
-Jittering is done by perturbing sample locations that are spaced out regularly. The jittered pattern is more clumsy in appearance. Jittering approximates the Poisson disc but the radius of the disc is smaller.
-This increase in low frequency noise would cause an image convoluted with this filter to scatter the high frequencies into low frequencies. To return to the human visual system example, our ocular visual system is more sensitive to low frequencies and thus jittering is inferior to Poisson disc sampling. The same image appears noisier in the jittered case than when using Poisson disc distribution.
+Jittering is done by perturbing sample locations that are spaced out regularly. The jittered pattern is more clumsy in appearance. Jittering approximates the Poisson disc but the radius of the disc is smaller. This increase in low frequency noise would cause an image convoluted with this filter to scatter the high frequencies into low frequencies. To return to the human visual system example, our ocular visual system is more sensitive to low frequencies and thus jittering is inferior to Poisson disc sampling. The same image appears noisier in the jittered case than when using Poisson disc distribution.
 Sampling using jittering involves randomly shifting the uniform sample points in the two spatial variables, the sample point usually at the center of a pixel is perturbed to some location within it. Furthernmore, sampling using a Poisson disc distribution is more problematic as it could require storing the values in a look up table. The Rust code snippet that was added in the non-uniform sampling uses Bernoulli sampling which is an example of this class of non-uniform patterns. 
 
-(Adam draft note: I can include here a Rust code snippet that provides the exact mechanism that could be used for our example using the visual field example again)
+
+
 
 ## Implementation details and project difficulty
 After possible solutions have been researched, the most likely replacement for the current implementation will be considered in terms of difficulty of implementation in terms of replacing the current uniform sampling mechanism. Project difficulty, possible methods, libraries to be used, timelines for production etc. 
