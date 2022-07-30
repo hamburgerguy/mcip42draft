@@ -42,7 +42,8 @@ The motivation behind this project is born out of the presently real and potenti
 
 The Monero community recognized this problem and came up with their own solution to the security problem presented by uniform sampling. 
 
-Conversations were made about possible ways to fix this problem and were discussed, the workable solution that was implemented to fix this uses an algorithm for sampling mixins that is non-uniform. This solution implemented a log-gamma distribution with shape parameter 19.28 and scale 1/1.6 rather than a uniform sampling distribution.
+Conversations were made about possible ways to fix this problem and were discussed, the workable solution that was implemented to fix this uses an algorithm for sampling mixins that is non-uniform. Once their system was broken and they could see most of the true inputs, they could see what the distribution of the ages of the true inputs was occurring in real life, and fit a curve to that. Then they propose to sample ring inputs according to that curve. Let’s call that probability distribution D. This solution implemented a log-gamma distribution with shape parameter 19.28 and scale 1/1.6 rather than a uniform sampling distribution. The gamma distribution D they picked reflects the fact that the true input is “usually” very young, so most of the weight of D is on the young inputs. However, what if I actually need to spend an old TxOut? If an adversary sees a mixin in my transaction which is very old, they can see that the likelihood that that was selected as a mixin is very low, because D places
+very little weight on it. So they can infer that this is probably the true input.
 
 Other distributions of other wallets use other methods such as monero-lws. These algorithms seem to effectively solve the problem presented by using uniform sampling distributions of mixins. Given the probabilistic nature of this problem it is perhaps impossible to completely erase the possibility of tracing through mixin data but it can at the very least become a far more difficult task with negligible possibility of success.
 
@@ -59,15 +60,55 @@ There are two types of non-uniform sampling mechanisms that will be discussed in
 1. Additive non-uniform sampling
 2. Stochastic jitting non-uniform sampling
 
-(Adam draft note: maybe give step by step explanation of how attacker could use this exploit, also: mention how testing might work)
+One of the primary difficulties is figuring out how effective a particular non-uniform sampling method is in fixing this problem. Having a concrete model for retroactive uncertainty of inputs is critical for understanding the effectiveness for each possible solution. A current model for understanding this that seems reasonable to work under is to optimize for the entropy for a set of distributions over a set of hypotheses where each hypothesis is weighted given its liklihood. 
+
+Let r = 1000 be a positive integer, the cluster radius, and let n = 10 be the number of mixins. Let D be any distribution over [−r, r], a “mixin distribution”. We assume mixins are sampled without replacement, so, not perfectly independently. (But perhaps this could be ignored and we could model it as independent sampling for now for simplicity.) Consider any set of n+1 integers x1, . . . , xn+1 representing the global indices of the output which appear in a ring. For each i from 1 up to n + 1, we have a hypothesis: Hi is the hypothesis that xi is the true input and all the rest are decoys. For each hypothesis Hi, the likelihood of the hypothesis (denoted Li) is the probability that the n-tuple (x1 − xi, x2 − xi, . . . , xi−1 − xi, xi+1 − xi, . . . , xn+1 − xi) is sampled from the distribution Dn. Note that it’s possible that Li is zero if e.g. xn − xi is greater than the cluster radius r. In other words, Li the probability that, given the assumption that xi is the true input, that we would actually sample the implied offsets from xi to produce the other inputs, if we were sampling from Dn. Let L denote the distribution over the hypotheses Hi where each hypothesis is weighted according to it’s likelihood.
+
+The Shannon entropy of L is one possible way of quantifying how much uncertainty the adversary has about the true input given their knowledge of D. If the adversary is absolutely certain that a certain input x is the true input based on retrospective analysis then this entropy will be close to 0. For any choice of r,n and D we can compute the expectation of the Shannon entropy and when x is sampled from D and some x value is equal to 0. 
+
+The optimization problem then becomes simple: for any given r and n, what choice of D will maximize the expectation of this Shannon entropy? Is the solution simpler if we use Renyi entropy or min-entropy or some other notion of entropy? Another alternative might be to look at the collision probability that two indpependent L samples are equivalent. 
+
+So far given this optimization problem, intuitively a stochastic jittering sampling probability distribution would work pretty effectievely. Given the abstraction difficulties it could be possible to construct a sort of model that we could plug in the parameters for D given this model and see if we can optimize for max entropy. Max entropy possible will probably be something around log n, perhaps a binomial distribution of radius r centered on zero could be a good bet. See also the section on Stochastic jitting Non-uniform sampling
+
+A hypothesis H_i is viable if and only if xi is within r of all other sampled
+points xj How many hypotheses are viable in expectation?
+It’s easy to see that usually, no more than half of the hypotheses are viable:
+• In expectation, one quarter of the points are less than −r/2 when we
+sample uniformly, and with high probability the real fraction is close to
+this.
+• Similarly, about one quarter of the points are greater than r/2, almost all
+of the time.
+• None of these points are viable because they are all more than r away
+from eachother.
+This analysis can be refined:
+• Given a sampled value xi, there are exactly |xi| points in the interval
+[−r, r] which are more than r away from xi.
+• The other points are all sampled independently from xi, so the probability
+over   their randomness that all of them are in range of xi is exactly
+(1 − |xi|/ 2r+1)^n
+• Fix a constant α > 0. If |xi| > αr/n, then this probability is about
+(1 − α/2n)^n ≤ e^−α/2.
+• On the other hand, the probability that |xi| < αr/n is at most α/n,
+because this only happens if we choose one of the 2αr/n+1 points in that
+range, out of the 2r + 1 that we could choose.
+• We conclude that for any α, the probability that Hi is a viable hypothesis
+is at most e−α/2 + α/n.
+• We can optimize this by trying to find α so that α/n ≈ e−α/2. This
+happens for α ≈ 2 · log n.
+
+
+the Shannon entropy cannot be expected to be more than about 1 +
+log log n, which is exponentially worse than the theoretical best case which is
+log n
+
+This could be a good model to test from and give adequate reason to choose a particular non-uniform sampling distribution. The technical justification would be that we choose a non-uniform distribution that best satisifies max entropy. Given the assumptions we have made this could give adequate reason to pick a certain distribution. 
 
 # Uniform Sampling 
 [Uniform Sampling]: (#uniform-sampling)
 In this framework we sample keys uniformly at random
 
-
 Below is a Rust code snippet demonstrating uniform sampling: 
-(Adam draft note: Maybe it could be better to just show a code snippet of the exact uniform sampling mechanism currently being used?)
+
 
 ```
 use rand::distributions::{Distribution, Uniform};
@@ -89,6 +130,42 @@ println!("{}", rng.gen_range(0..10));
 
 ```
 
+Currently in the Android mobile codebase the current sampling system uses the Random library in Java. 
+
+
+```
+List<Ring> getRingsForUTXOs(
+            @NonNull List<OwnedTxOut> utxos,
+            @NonNull UnsignedLong numTxOutsInLedger
+    ) throws InvalidFogResponse, NetworkException, AttestationException {
+        // Sanity check to ensure all UTXOs have unique indices
+        HashSet<UnsignedLong> indices = new HashSet<>();
+        for (OwnedTxOut utxo : utxos) {
+            if (!indices.add(utxo.getTxOutGlobalIndex())) {
+                throw new IllegalStateException("utxos contains non-unique indices");
+            }
+        }
+
+        // Figure out how many total outputs we need to get.
+        int count = utxos.size() * DEFAULT_RING_SIZE;
+        if (count > numTxOutsInLedger.intValue()) {
+            throw new InvalidFogResponse("Ledger does not contain enough outputs");
+        }
+
+        HashSet<UnsignedLong> realIndices = new HashSet<>(indices);
+        // Continue selecting random indices until we got our desired amount.
+        Random rnd = new Random();
+        while (indices.size() != count) {
+            UnsignedLong index = UnsignedLong.valueOf(Math.abs(rnd.nextLong()))
+                    .remainder(numTxOutsInLedger);
+            indices.add(index);
+        }
+```
+
+This code should be updated to use a non-uniform sampling method. 
+
+Currently in sampling mixins the Random() method used in Java is what samples the mixin signatures. This is a uniform sampling method and should be updated to a non-uniform sampling method. Besides uniform sampling presenting a security risk, it's possible that this method of generating randomness might have other security concerns.  
+
 # Security Risks 
 [Security Risks]: (#security-risks)
 By uniformly sampling keys at random to put into an aggregate ring signature, it is possible to differentiate between the decoy signatures and the genuine ones. For a more in depth explanation of how this is possible, see the Foundations of Ring sampling paper linked in the prior-art section of this mcip. The larger the possible sample of signatures there is if there is a uniform sampling distribution the more likely there is for the non-dummy (actual) signature that signed the transaction to be the earliest signature. This allows the anonymity afforded by the RingCT mechanism to be circumvented by recognizing that the earliest signature is the most likely the legitimate one. 
@@ -107,6 +184,7 @@ use rand::distributions::{Bernoulli, Distribution};
 let d = Bernoulli::new(0.3).unwrap();
 let v = d.sample(&mut rand::thread_rng());
 println!("{} is from a Bernoulli distribution", v);
+
 ```
 
 This sampling method utilizes Bernoulli sampling. Bernoulli sampling is a stochastic jittering method of sampling discrete values, one of many possible methods of non-uniform sampling that could potentially be implemented. 
@@ -122,7 +200,7 @@ Additive Random Sampling (ARS) as a sampling method provides alias-free processi
 
 
 #### Stochastic jitting Non-uniform sampling
-Explanation of stochastic non-uniform sampling
+Explanation of stochastic non-uniform sampling:
 
 In stochastic sampling, every point has a finite probability of being hit. Stochastic sampling is extremely powerful as applied to the human bodies ocular visual system which is much more sensitive to aliases than noise. The human eye contains an array of non-uniformly distributed photoreceptors and this is the reason that the eye does not produce its own aliasing effects. Photoreceptor cells in the fovea are tightly packed and the lens acts as an antialiasing filter. However in the region outside the fovea, the density is much less and the cells are non-uniformly distributed.
 Different aliasing techniques are suitable for different types of rendering. Stochastic sampling is almost associated with ray tracers.
@@ -131,14 +209,14 @@ The type of randomness used in this case dictates the spectral character of the 
 
 There are three classes of non-uniform patterns
 
-Poisson
+Poisson:
 This pattern is generated by adding points at random locations until the area is full. This distribution is uniform. The Fourier transform is random too with values distributed over all the frequencies. So, it is not very useful as a filter as it does not discriminate between high and low frequencies. Convolution with this filter would scatter both high and low frequencies alike and as a result, the image is masked in white noise. It might be possible to use a Number Theoretic Transform in our specific sampling use case which could also have the added benefit of allowing for more efficient multiplicative computational processes. 
 
-Poisson Disc
+Poisson Disc:
 This is a generalization of the Poisson sampling whereby each sample point satisfies a minimum distance constraint. This pattern is achieved by generating uniformly distributed points as in Poisson sampling and retaining those that satisfy the minimum distance constraint. This method is extremely expensive from a computational complexity perspective being incredibly inefficient to implement and so for our purposes should probably not be realistically considered but is worth mentioning especially in comparison with the other classes. 
 
-Jittered
-Jiterring is done by perturbing sample locations that are spaced out regularly. The jittered pattern is more clumsy in appearance. Jittering approximates the Poisson disc but the radius of the disc is smaller.
+Jittered:
+Jittering is done by perturbing sample locations that are spaced out regularly. The jittered pattern is more clumsy in appearance. Jittering approximates the Poisson disc but the radius of the disc is smaller.
 This increase in low frequency noise would cause an image convoluted with this filter to scatter the high frequencies into low frequencies. To return to the human visual system example, our ocular visual system is more sensitive to low frequencies and thus jittering is inferior to Poisson disc sampling. The same image appears noisier in the jittered case than when using Poisson disc distribution.
 Sampling using jittering involves randomly shifting the uniform sample points in the two spatial variables, the sample point usually at the center of a pixel is perturbed to some location within it. Furthernmore, sampling using a Poisson disc distribution is more problematic as it could require storing the values in a look up table. The Rust code snippet that was added in the non-uniform sampling uses Bernoulli sampling which is an example of this class of non-uniform patterns. 
 
@@ -158,7 +236,14 @@ The primary drawback to this project is merely time and project difficulty requi
 [rationale-and-alternatives]: #rationale-and-alternatives
 This seems like a rational action to implement and project to execute as there is null drawback and certain positive potential gain. Essentially, this project has to be implemented at some point in the future to maintain the security features. 
 
-Alternatively if it's decided its better to focus attention elsewhere, since this does not present any absolutely endgame breaking immediate security risk this could be a potential alternative course of action.  
+Alternatively if it's decided its better to focus attention elsewhere, since this does not present any absolutely endgame breaking immediate security risk this could be a potential alternative course of action. 
+
+An alternative method which hasn't been mentioned here is midpoint sampling. This procedure gets perfectly uniform likelihoods:
+Given a radius of r and n points to sample:
+• First, choose a “midpoint” m by sampling uniformly from [−r, r]
+• Then choose n mixin offsets by sampling uniformly and independently
+from [m − r,m + r].
+The “effective” radius is then 2r.
 
 
 # Prior art
@@ -174,13 +259,17 @@ Alternatively if it's decided its better to focus attention elsewhere, since thi
 
 * Path ORAM proposal: https://drive.google.com/file/d/1NKRVK7-MXr1nolgUdH5SdbIC8yIG_ft3/view
 
+* Java android-sdk repo: https://github.com/mobilecoinofficial/android-sdk/blob/4dfe02edba3f15f8d2c81d22ad75dac970a06217/android-sdk/src/main/java/com/mobilecoin/lib/MobileCoinClient.java#L811
+
 * koe mcip 17 draft: https://github.com/mobilecoinfoundation/mcips/pull/17/files (Adam draft note: might be good to reference some of the code snippets used here? There's a lot of good explanations of vulnerabilities better than mine as well.)
 
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-We don't know how we are going to implement a successful RingCT non-uniform sampling distribution as fine tuned as the one used in other blockchain and cryptography projects that use decoy signatures without de-anonymized pre-RingCT data. While this is mostly a security problem for systems that don't use secure enclaves (fog users for instance) making it less of a security risk than having all the RingCT data being publically accessible. We don't know the potential future vulnerabilities that could be created by having uniformly sampled decoy signatures being utilized in RingCT signatures that are stored insecurely.  
+While this is mostly a security problem for systems that don't use secure enclaves making it less of a security risk than having all the RingCT data being publically accessible. That being said we don't know the potential future vulnerabilities that could be created by having uniformly sampled decoy signatures being utilized in RingCT signatures that are stored insecurely. 
+
+Another question we have is What should happen when the true input is extremely young, like, it is the most recent TxOut on the blockchain, and there are no TxOut’s which are +r to the right of it?
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
