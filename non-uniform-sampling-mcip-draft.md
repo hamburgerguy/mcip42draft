@@ -14,7 +14,6 @@
   - [Uniform Sampling](#uniform-sampling)
     - [Security Risks](#security-risks)
   - [Non-Uniform Sampling](#non-uniform-sampling)
-    - [Methods](#methods)
 - [Drawbacks](#drawbacks)
 - [Rationale and alternatives](#rationale-and-alternatives)
 - [Prior art](#prior-art)
@@ -26,8 +25,7 @@
 
 Current sampling of ring signatures to create aggregated signatures in MobileCoin uses a uniform sampling distribution. 
 
-This unintentionally creates a bias towards younger signatures being the most likely candidate for the genuine signature and skews the selection bias which presents a potential de-anonymization security risk amongst other potential loopholes that could be possibly exploited. It should be noted that given a secure enclave setup, the security risk is negated. It should be noted that this vulnerability is for fog users that aren't using a secure enclave setup (such as some fog users). A potential attacker could store multiple aggregate ring signatures in a database somewhere and given the selection bias be able to determine which signatures are genuine and which are decoys.  
-
+We propose that clients adopt an alternative method of sampling ring mixins. The method we propose has improved theoretical justification and also addresses known issues with the method used by most MobileCoin clients today.
 
 # Motivation
 [motivation]: #motivation
@@ -55,10 +53,6 @@ Finding which method of non-uniform sampling to choose from has its own difficul
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
-
-There are two types of non-uniform sampling mechanisms that will be discussed in this mcip, each having their own subclasses each with their own set of characteristics as well but mostly following the same methods:
-1. Additive non-uniform sampling
-2. Stochastic jitting non-uniform sampling
 
 One of the primary difficulties is figuring out how effective a particular non-uniform sampling method is in fixing this problem. Having a concrete model for retroactive uncertainty of inputs is critical for understanding the effectiveness for each possible solution. A current model for understanding this that seems reasonable to work under is to optimize for the entropy for a set of distributions over a set of hypotheses where each hypothesis is weighted given its liklihood. 
 
@@ -171,7 +165,6 @@ Currently in sampling mixins the Random() method used in Java is what samples th
 By uniformly sampling keys at random to put into an aggregate ring signature, it is possible to differentiate between the decoy signatures and the genuine ones. For a more in depth explanation of how this is possible, see the Foundations of Ring sampling paper linked in the prior-art section of this mcip. The larger the possible sample of signatures there is if there is a uniform sampling distribution the more likely there is for the non-dummy (actual) signature that signed the transaction to be the earliest signature. This allows the anonymity afforded by the RingCT mechanism to be circumvented by recognizing that the earliest signature is the most likely the legitimate one. 
 
 
-
 # Non-uniform sampling 
 [Non-Uniform Sampling]: (#non-uniform-sampling)
 In this framework we employ a to-be-determined method for sampling keys non-uniformly at random.
@@ -188,13 +181,6 @@ println!("{} is from a Bernoulli distribution", v);
 ```
 
 This sampling method utilizes Bernoulli sampling. Bernoulli sampling is a stochastic jittering method of sampling discrete values, one of many possible methods of non-uniform sampling that could potentially be implemented. 
-
-# Methods 
-[Methods]: (#methods)
-### Additive Non-uniform Sampling
-Explanation of additive non-uniform sampling
-
-Additive Random Sampling (ARS) as a sampling method provides alias-free processing of analogic signals. As its name indicates, the sampling instant in this mode is obtained by adding a random variable to the previous one in the sequence.  As the probability density function of the sum of two random variables is the convolution of their probability density function, the probability density function of the nth instant t_n is given by adding all the probabilities together. In Additive Random Sampling with a Gaussian distribution a signal can be easily separated from noise for a number of points greater than 100. Nonetheless, it can be seen that also in this mode the mean sampling frequency can be a way smaller than the Nyquist rate also, but with a limitation on the number of samples to be greater than 100. This could be applied for our specific use case as a potential solution.
 
 
 #### Stochastic jitting Non-uniform sampling
@@ -216,9 +202,6 @@ This is a generalization of the Poisson sampling whereby each sample point satis
 Jittered:
 Jittering is done by perturbing sample locations that are spaced out regularly. The jittered pattern is more clumsy in appearance. Jittering approximates the Poisson disc but the radius of the disc is smaller. This increase in low frequency noise would cause an image convoluted with this filter to scatter the high frequencies into low frequencies. To return to the human visual system example, our ocular visual system is more sensitive to low frequencies and thus jittering is inferior to Poisson disc sampling. The same image appears noisier in the jittered case than when using Poisson disc distribution.
 Sampling using jittering involves randomly shifting the uniform sample points in the two spatial variables, the sample point usually at the center of a pixel is perturbed to some location within it. Furthernmore, sampling using a Poisson disc distribution is more problematic as it could require storing the values in a look up table. The Rust code snippet that was added in the non-uniform sampling uses Bernoulli sampling which is an example of this class of non-uniform patterns. 
-
-
-
 
 ## Implementation details and project difficulty
 After possible solutions have been researched, the most likely replacement for the current implementation will be considered in terms of difficulty of implementation in terms of replacing the current uniform sampling mechanism. Project difficulty, possible methods, libraries to be used, timelines for production etc. 
